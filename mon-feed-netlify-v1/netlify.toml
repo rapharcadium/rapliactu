@@ -1,7 +1,10 @@
 [build]
   publish = "public"
-  functions = "netlify/functions"
   edge_functions = "netlify/edge-functions"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [build.environment]
   NODE_VERSION = "20"
