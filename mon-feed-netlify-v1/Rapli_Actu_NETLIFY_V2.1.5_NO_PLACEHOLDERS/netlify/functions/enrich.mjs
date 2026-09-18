@@ -1,0 +1,3 @@
+import { enrichBatch } from '../lib/enricher.mjs';
+export default async()=>{const start=Date.now();try{const r=await enrichBatch();for(const x of r.logs||[])console.log(JSON.stringify({event:'rapli-enrich-item',...x}));console.log(JSON.stringify({event:'rapli-enrich',ok:true,durationMs:Date.now()-start,processed:r.processed,remaining:r.remaining,success:r.ok,errors:r.errors}));return new Response(null,{status:204})}catch(error){console.error(JSON.stringify({event:'rapli-enrich',ok:false,durationMs:Date.now()-start,error:error?.message||String(error)}));throw error}};
+export const config={schedule:'3,13,23,33,43,53 * * * *'};
