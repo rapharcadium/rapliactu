@@ -1,72 +1,33 @@
-const CATEGORY_LABELS={all:'Tout',football:'⚽ Foot',basket:'🏀 Basket',nfl:'🏈 NFL',baseball:'⚾ MLB',local:'📍 Local',transport:'🚛 Transport',metal:'🤘 Metal',cards:'🃏 Cards'};
-let payload={articles:[],sources:[],stats:{}};
-let state={category:'all',source:'all',read:'all',sort:'new',search:'',favOnly:false};
-const readSet=new Set(JSON.parse(localStorage.getItem('mf_v1_read')||'[]'));
-const favSet=new Set(JSON.parse(localStorage.getItem('mf_v1_fav')||'[]'));
-const $=id=>document.getElementById(id);
-const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
-
+const CATEGORY_LABELS={all:'Tous les thèmes',football:'Football',basket:'Basket / NBA',nfl:'NFL',baseball:'MLB',local:'Actualité locale',transport:'Transport',metal:'Metal',cards:'Cards',maritime:'Maritime',sailing:'Voile',general:'Actualité générale',entertainment:'Divertissement',cycling:'Cyclisme'};
+const CATEGORY_ICONS={football:'⚽',basket:'🏀',nfl:'🏈',baseball:'⚾',local:'📍',transport:'🚛',metal:'🤘',cards:'🃏',maritime:'⚓',sailing:'⛵',general:'🌍',entertainment:'🎙️',cycling:'🚴'};
+const AVAIL={free:'Libre',account:'Compte requis',paywall:'Abonnement',unknown:'Inconnu'};
+const MEDIA={x:'𝕏',youtube:'▶ YouTube',instagram:'📸 Instagram',facebook:'f Facebook',tiktok:'♪ TikTok',video:'🎬'};
+let payload={articles:[],sources:[],stats:{}};let pendingPayload=null;let history=[];let nextBefore=null;let historyDone=false;let firstLoad=true;let state={category:'all',source:'all',read:'all'};
+const readSet=new Set(JSON.parse(localStorage.getItem('rapli_read_v2')||'[]'));const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
+const t=x=>{const n=Date.parse(x?.publishedAt||x?.discoveredAt||0);return Number.isFinite(n)?n:0};
+function persist(){localStorage.setItem('rapli_read_v2',JSON.stringify([...readSet]))}
 function age(iso){if(!iso)return 'heure inconnue';const d=new Date(iso),m=Math.max(0,Math.floor((Date.now()-d)/60000));if(m<1)return "à l’instant";if(m<60)return `il y a ${m} min`;const h=Math.floor(m/60);if(h<24)return `il y a ${h} h`;const j=Math.floor(h/24);if(j<7)return `il y a ${j} j`;return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}
-function freshness(iso){if(!iso)return 'Aucune collecte disponible';const d=new Date(iso);return `Collecté ${age(iso)} • ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`}
-function persist(){localStorage.setItem('mf_v1_read',JSON.stringify([...readSet]));localStorage.setItem('mf_v1_fav',JSON.stringify([...favSet]))}
-
+function freshness(iso){if(!iso)return 'Aucune collecte disponible';const d=new Date(iso);return `${payload.stats?.sources||0} sources • collecté ${age(iso)} • ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`}
+function categories(){return ['all',...new Set((payload.sources||[]).map(s=>s.category).filter(Boolean))]}
 function buildFilters(){
-  const cats=['all',...new Set(payload.sources.map(s=>s.category).filter(Boolean))];
-  $('categories').innerHTML=cats.map(c=>`<button class="chip ${state.category===c?'active':''}" data-cat="${c}">${esc(CATEGORY_LABELS[c]||c)}</button>`).join('')+`<button class="chip ${state.favOnly?'active':''}" id="favOnly">⭐ Favoris</button>`;
-  document.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{state.category=b.dataset.cat;state.favOnly=false;buildFilters();render()});
-  $('favOnly').onclick=()=>{state.favOnly=!state.favOnly;if(state.favOnly)state.category='all';buildFilters();render()};
-  const current=state.source;
-  $('sourceFilter').innerHTML='<option value="all">Toutes les sources</option>'+payload.sources.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
-  $('sourceFilter').value=payload.sources.some(s=>s.id===current)?current:'all';
+  $('categoryFilter').innerHTML=categories().map(c=>`<option value="${esc(c)}">${esc(c==='all'?CATEGORY_LABELS.all:`${CATEGORY_ICONS[c]||'•'} ${CATEGORY_LABELS[c]||c}`)}</option>`).join('');$('categoryFilter').value=state.category;
+  const current=state.source;$('sourceFilter').innerHTML='<option value="all">Toutes les sources</option>'+(payload.sources||[]).map(s=>`<option value="${esc(s.id)}">${esc(s.icon||'📰')} ${esc(s.name)}</option>`).join('');state.source=(payload.sources||[]).some(s=>s.id===current)?current:'all';$('sourceFilter').value=state.source;
 }
-
-function filtered(){
-  let a=[...payload.articles];
-  if(state.category!=='all')a=a.filter(x=>x.category===state.category);
-  if(state.source!=='all')a=a.filter(x=>x.sourceId===state.source);
-  if(state.favOnly)a=a.filter(x=>favSet.has(x.id));
-  if(state.read==='read')a=a.filter(x=>readSet.has(x.id));
-  if(state.read==='unread')a=a.filter(x=>!readSet.has(x.id));
-  if(state.search){const q=state.search.toLowerCase();a=a.filter(x=>`${x.title} ${x.originalTitle} ${x.summary} ${x.source}`.toLowerCase().includes(q))}
-  if(state.sort==='clickbait')a.sort((a,b)=>(b.clickbaitScore||0)-(a.clickbaitScore||0));
-  else if(state.sort==='source')a.sort((a,b)=>a.source.localeCompare(b.source,'fr')||(Date.parse(b.publishedAt||0)-Date.parse(a.publishedAt||0)));
-  else a.sort((a,b)=>Date.parse(b.publishedAt||0)-Date.parse(a.publishedAt||0));
-  return a;
+function baseCurrent(){let a=[...(payload.articles||[])];if(state.category!=='all')a=a.filter(x=>x.category===state.category);if(state.source!=='all')a=a.filter(x=>x.sourceId===state.source);return a}
+function combined(){const map=new Map();for(const x of [...(payload.articles||[]),...history])if(x?.id&&!map.has(x.id))map.set(x.id,x);let a=[...map.values()];if(state.category!=='all')a=a.filter(x=>x.category===state.category);if(state.source!=='all')a=a.filter(x=>x.sourceId===state.source);if(state.read==='read')a=a.filter(x=>readSet.has(x.id));if(state.read==='unread')a=a.filter(x=>!readSet.has(x.id));return a.sort((a,b)=>t(b)-t(a))}
+function resetHistory(){history=[];historyDone=false;const c=baseCurrent().sort((a,b)=>t(a)-t(b));const oldest=c[0];nextBefore=oldest?new Date(Math.max(0,t(oldest)-1)).toISOString():new Date().toISOString();$('loadMore').disabled=false;$('loadMore').textContent='Charger les actualités précédentes'}
+function renderSources(){const s=payload.sources||[],ok=s.filter(x=>x.status==='ok').length,stale=s.filter(x=>x.status==='stale').length,err=s.filter(x=>x.status==='error').length;$('sourceSummary').textContent=`${ok} OK${stale?` • ${stale} cache`:''}${err?` • ${err} erreur`:''}`;$('sources').innerHTML=s.map(x=>`<div class="source-row"><span>${esc(x.icon||'📰')}</span><div><div class="source-name">${esc(x.name)}</div><div class="source-detail">${esc(x.mode||'—')} • ${x.count||0} actus${x.newCount?` • +${x.newCount}`:''}</div></div><span class="status ${esc(x.status)}">${esc(x.status)}</span></div>`).join('')}
+function render(){const items=combined();$('count').textContent=`${items.length} article${items.length>1?'s':''}`;$('statAll').textContent=items.length;$('statUnread').textContent=items.filter(x=>!readSet.has(x.id)).length;if(!items.length){$('feed').innerHTML='<div class="empty">Aucune actualité avec ces filtres.</div>';return}
+  $('feed').innerHTML=items.map(x=>{const rewritten=x.title&&x.originalTitle&&x.title!==x.originalTitle;const av=x.availability||'unknown';const media=(x.media||[]).filter(Boolean);return `<article class="card ${esc(x.category||'')} ${readSet.has(x.id)?'read':''}"><div class="meta"><div class="source-line"><span class="source-badge">${esc(x.icon||'📰')} ${esc(x.source)}</span><span class="category-label">${esc(`${CATEGORY_ICONS[x.category]||''} ${CATEGORY_LABELS[x.category]||x.category||''}`.trim())}</span></div><span class="age">${esc(age(x.publishedAt||x.discoveredAt))}</span></div><h3 class="title"><a href="${esc(x.link)}" target="_blank" rel="noopener" data-open="${esc(x.id)}">${esc(x.title||x.originalTitle)}</a></h3>${rewritten?`<div class="original"><span class="anti-badge" title="Titre nettoyé automatiquement — confiance ${esc(String(x.antiClickbait?.confidence||x.entityConfidence||0))}%">🎣 nettoyé</span><span class="original-title">${esc(x.originalTitle)}</span></div>`:''}${x.image?`<div class="thumb-wrap"><img class="thumb" loading="lazy" referrerpolicy="no-referrer" src="${esc(x.image)}" alt="" onerror="this.parentElement.remove()"></div>`:''}${x.summary?`<p class="summary">${esc(x.summary)}</p>`:''}<div class="actions"><span class="availability ${esc(av)}" title="Disponibilité de l’article"><span class="availability-dot"></span>${esc(AVAIL[av]||AVAIL.unknown)}</span><button class="mini" data-read="${esc(x.id)}">${readSet.has(x.id)?'↩ Non lu':'✓ Lu'}</button><a class="mini" href="${esc(x.link)}" target="_blank" rel="noopener" data-open="${esc(x.id)}">Lire ↗</a>${media.length?`<span class="media-hints">${media.map(m=>`<span class="media-hint">${esc(MEDIA[m]||m)}</span>`).join('')}</span>`:''}</div></article>`}).join('');
+  document.querySelectorAll('[data-read]').forEach(b=>b.onclick=()=>{readSet.has(b.dataset.read)?readSet.delete(b.dataset.read):readSet.add(b.dataset.read);persist();render()});document.querySelectorAll('[data-open]').forEach(a=>a.onclick=()=>{readSet.add(a.dataset.open);persist();setTimeout(render,120)});
 }
-
-function render(){
-  const items=filtered();$('count').textContent=`${items.length} article${items.length>1?'s':''}`;
-  $('statAll').textContent=payload.articles.length;$('statUnread').textContent=payload.articles.filter(x=>!readSet.has(x.id)).length;$('statFav').textContent=favSet.size;
-  if(!items.length){$('feed').innerHTML=`<div class="empty">Aucune actualité avec ces filtres.</div>`;return}
-  $('feed').innerHTML=items.map(x=>{
-    const rewritten=x.title&&x.originalTitle&&x.title!==x.originalTitle;
-    return `<article class="card ${readSet.has(x.id)?'read':''}" data-id="${x.id}">
-      <div class="meta"><div class="source-line"><span class="badge" style="border-color:${esc(x.color||'#313b48')}55">${esc(x.icon||'📰')} ${esc(x.source)}</span><span>${esc(CATEGORY_LABELS[x.category]||x.category)}</span></div><span class="age">${esc(age(x.publishedAt))}</span></div>
-      <h3 class="title"><a href="${esc(x.link)}" target="_blank" rel="noopener" data-open="${x.id}">${esc(x.title||x.originalTitle)}</a></h3>
-      ${rewritten?`<div class="original">Original : ${esc(x.originalTitle)}</div>`:''}
-      ${x.summary?`<p class="summary">${esc(x.summary)}</p>`:''}
-      <div class="actions"><button class="mini ${favSet.has(x.id)?'on':''}" data-fav="${x.id}">⭐</button><button class="mini" data-read="${x.id}">${readSet.has(x.id)?'↩ Non lu':'✓ Lu'}</button><a class="mini" href="${esc(x.link)}" target="_blank" rel="noopener" data-open="${x.id}">Lire ↗</a>${x.clickbaitScore>=40?`<span class="clickbait">🎣 ${x.clickbaitScore}/100</span>`:''}</div>
-    </article>`
-  }).join('');
-  document.querySelectorAll('[data-fav]').forEach(b=>b.onclick=()=>{favSet.has(b.dataset.fav)?favSet.delete(b.dataset.fav):favSet.add(b.dataset.fav);persist();render()});
-  document.querySelectorAll('[data-read]').forEach(b=>b.onclick=()=>{readSet.has(b.dataset.read)?readSet.delete(b.dataset.read):readSet.add(b.dataset.read);persist();render()});
-  document.querySelectorAll('[data-open]').forEach(a=>a.onclick=()=>{readSet.add(a.dataset.open);persist();setTimeout(render,150)});
-}
-
-function renderSources(){
-  const s=payload.sources||[];
-  const ok=s.filter(x=>x.status==='ok').length, stale=s.filter(x=>x.status==='stale').length, err=s.filter(x=>x.status==='error').length;
-  $('sourceSummary').textContent=`${ok} OK${stale?` • ${stale} cache`:''}${err?` • ${err} erreur`:''}`;
-  $('sources').innerHTML=s.map(x=>`<div class="source-row"><span>${esc(x.icon||'📰')}</span><div><div class="source-name">${esc(x.name)}</div><div class="source-detail">${esc(x.mode||'—')} • ${x.count||0} actus${x.lastSuccessAt?` • ${age(x.lastSuccessAt)}`:''}</div></div><span class="status ${esc(x.status)}">${esc(x.status)}</span></div>`).join('');
-}
-
+function showNew(n){if(!n){$('newBanner').classList.remove('show');return}$('newCount').textContent=`${n} nouvelle${n>1?'s':''} actu${n>1?'s':''}`;$('newBanner').classList.add('show')}
+function applyPayload(data,{reset=false}={}){payload=data;$('freshness').textContent=freshness(payload.generatedAt);buildFilters();renderSources();if(reset)resetHistory();render()}
+function acknowledgeNew(){if(pendingPayload){applyPayload(pendingPayload,{reset:false});payload=pendingPayload;pendingPayload=null}if(payload.generatedAt)localStorage.setItem('rapli_last_seen_at',payload.generatedAt);showNew(0);window.scrollTo({top:0,behavior:'smooth'})}
 async function load(){
-  $('liveDot').className='dot loading';
-  try{
-    const r=await fetch('/api/feed',{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);payload=await r.json();
-    $('freshness').textContent=freshness(payload.generatedAt);$('liveDot').className='dot';buildFilters();renderSources();render();
-  }catch(e){$('liveDot').className='dot error';$('freshness').textContent='Feed indisponible';$('feed').innerHTML=`<div class="empty">Impossible de lire le feed : ${esc(e.message)}</div>`}
+  $('liveDot').className='dot loading';const lastSeen=localStorage.getItem('rapli_last_seen_at');const qs=lastSeen?`?since=${encodeURIComponent(lastSeen)}`:'';
+  try{const r=await fetch(`/api/feed${qs}`,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);const data=await r.json();$('liveDot').className='dot';if(firstLoad){applyPayload(data,{reset:true});firstLoad=false;if(!lastSeen&&data.generatedAt)localStorage.setItem('rapli_last_seen_at',data.generatedAt);else showNew(data.newCount||0);return}if(lastSeen&&(data.newCount||0)>0){pendingPayload=data;$('freshness').textContent=freshness(data.generatedAt);showNew(data.newCount);return}applyPayload(data,{reset:false})}catch(e){$('liveDot').className='dot error';$('freshness').textContent='Feed indisponible';if(firstLoad)$('feed').innerHTML=`<div class="empty">Impossible de lire Rapli Actu : ${esc(e.message)}</div>`}
 }
-
-$('refresh').onclick=load;$('search').oninput=e=>{state.search=e.target.value.trim();render()};$('sourceFilter').onchange=e=>{state.source=e.target.value;render()};$('readFilter').onchange=e=>{state.read=e.target.value;render()};$('sort').onchange=e=>{state.sort=e.target.value;render()};
+async function loadMore(){if(historyDone||!nextBefore)return;const b=$('loadMore');b.disabled=true;b.textContent='Chargement…';try{const u=new URL('/api/history',location.origin);u.searchParams.set('before',nextBefore);u.searchParams.set('limit','100');u.searchParams.set('category',state.category);u.searchParams.set('source',state.source);const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);const data=await r.json();history.push(...(data.articles||[]));nextBefore=data.nextBefore;historyDone=!data.hasMore||!(data.articles||[]).length;render();b.disabled=historyDone;b.textContent=historyDone?'Fin de l’historique (30 jours)':'Charger les actualités précédentes'}catch(e){b.disabled=false;b.textContent='Réessayer de charger l’historique'}}
+$('categoryFilter').onchange=e=>{state.category=e.target.value;resetHistory();render()};$('sourceFilter').onchange=e=>{state.source=e.target.value;resetHistory();render()};$('readFilter').onchange=e=>{state.read=e.target.value;render()};$('refresh').onclick=load;$('newBanner').onclick=acknowledgeNew;$('loadMore').onclick=loadMore;
 load();setInterval(load,5*60*1000);
