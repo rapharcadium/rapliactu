@@ -1,11 +1,11 @@
 {
-  "name": "mon-feed-netlify",
-  "version": "1.0.0",
+  "name": "rapli-actu-netlify",
+  "version": "2.1.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "netlify dev",
-    "check": "node --check netlify/functions/collect.mjs && node --check netlify/lib/collector.mjs && node --check assets/app.js"
+    "check": "node --check netlify/functions/collect.mjs && node --check netlify/functions/enrich.mjs && node --check netlify/lib/collector.mjs && node --check netlify/lib/enricher.mjs && node --check netlify/lib/parsers.mjs && node --check netlify/lib/storage.mjs && node --check netlify/edge-functions/feed.mjs && node --check netlify/edge-functions/history.mjs && node --check public/assets/app.js"
   },
   "dependencies": {
     "@netlify/blobs": "latest",

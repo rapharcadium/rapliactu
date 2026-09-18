@@ -1,122 +1,116 @@
-# MON FEED — V1 Netlify Native
+# Rapli Actu — V2.1.3
 
-Cette version abandonne les proxys CORS côté navigateur. Le navigateur ne contacte plus les médias : il lit **un seul feed JSON déjà préparé**.
+## Correctif caractères HTML
+
+- Décodage global des entités HTML dans les titres et résumés (`&#039;`, `&amp;`, `&quot;`, `&nbsp;`, entités numériques décimales/hexadécimales, etc.).
+- Gestion des entités doublement encodées (`&amp;#039;`).
+- Normalisation appliquée à la collecte **et** aux réponses `/api/feed` et `/api/history`, donc les anciens articles déjà stockés sont corrigés à l'affichage sans attendre leur expiration.
+
+# Rapli Actu — Netlify V2
+
+Portage Netlify du Design Lab validé, avec collecte serveur, historique 30 jours, miniatures et enrichissement des articles.
 
 ## Architecture
 
+- `collect` : toutes les 10 minutes. Récupère les sources en parallèle, avec une profondeur adaptée (20 à 100 éléments selon la source).
+- **Affichage courant** : seulement les 10 dernières actus par source sont conservées dans `feed/current` pour un chargement rapide.
+- **Historique** : toutes les nouvelles actus détectées sont archivées dans Netlify Blobs pendant 30 jours, même si tu ne visites pas le site.
+- `enrich` : à 03, 13, 23, 33, 43 et 53 minutes de chaque heure. Enrichit jusqu’à 36 articles par passage avec miniature, disponibilité (libre/compte/abonnement) et détection de média intégré (X, YouTube, Instagram, Facebook, TikTok, vidéo native).
+- `/api/feed` : renvoie le feed courant + le nombre d’actus nouvelles depuis la dernière visite.
+- `/api/history` : charge les actualités précédentes par pages de 100 jusqu’à 30 jours.
+
+## Sources
+
+26 sources actives déclarées.
+
+Les règles spéciales sont déjà incluses :
+
+- RTL Les Grosses Têtes : uniquement les articles dont le titre contient « Le planning des Grosses Têtes ».
+- Tendance Ouest : uniquement les articles contenant « Le Havre » ou « au Havre ».
+
+## Mise à jour du projet Netlify existant
+
+1. Sauvegarde ton dépôt actuel si tu veux pouvoir revenir en arrière.
+2. Remplace le contenu du dépôt GitHub par **le contenu de ce dossier** (pas le dossier parent lui-même).
+3. Vérifie qu’à la racine du repo tu as :
+
 ```text
-24 sources
-   │
-   ├─ RSS officiel quand disponible
-   ├─ extracteur HTML dédié (FFF, Footy Headlines)
-   └─ extracteur HTML générique pour certaines pages
-   │
-   ▼
-Netlify Scheduled Function `collect`
-(toutes les 10 minutes)
-   │
-   ├─ 10 actus max/source
-   ├─ dédoublonnage
-   ├─ normalisation des dates/liens
-   ├─ anti-putaclic léger
-   └─ si une source tombe : conservation de son dernier cache valide
-   │
-   ▼
-Netlify Blobs `mon-feed`
-(une seule écriture atomique par cycle)
-   │
-   ▼
-Edge Function `/api/feed`
-   │
-   ▼
-Interface web
+netlify.toml
+package.json
+public/
+netlify/
 ```
 
-## Pourquoi cette architecture est plus fiable
+4. Commit + push vers GitHub.
+5. Attends la fin du déploiement Netlify.
+6. Dans Netlify : **Cloud compute → Functions → collect → Run now**.
+7. Une fois `collect` terminé, lance aussi **enrich → Run now** une fois pour amorcer les miniatures et indicateurs.
+8. Recharge le site.
 
-- Aucun CORS dans le navigateur.
-- Aucun proxy public AllOrigins/corsproxy.io.
-- Aucun Google News utilisé comme source de secours.
-- Une source en panne n'efface plus ses anciennes actus : elle passe en état `stale`.
-- Le cache complet est écrit en une seule fois : le lecteur ne voit jamais un feed à moitié mis à jour.
-- Les 24 sources sont collectées côté serveur en parallèle.
-- Le site ne charge qu'un JSON, donc l'ouverture est très rapide.
-- Les éventuelles clés futures restent dans les variables d'environnement Netlify et jamais dans le HTML.
+Les fonctions planifiées prendront ensuite le relais automatiquement sur le déploiement publié.
 
-## Déploiement recommandé sur Netlify
+## Ce qui change par rapport à la V1
 
-### Option A — GitHub + Netlify (recommandée)
+- Design Rapli Actu (Poppins, fond noir/anthracite/bleu nuit + menthe légère + texture).
+- Menu déroulant de thèmes, pas de barre de recherche.
+- Aucun favori et aucun tri « récent/source/putaclic ».
+- Cartes teintées par catégorie.
+- Miniatures centrées, responsive 16:9, cadre doux.
+- Point de disponibilité : vert libre, orange compte, rouge abonnement, gris inconnu.
+- Indicateurs média : X, YouTube, Instagram, Facebook, TikTok, vidéo.
+- Message « X nouvelles actus » basé sur les articles réellement découverts depuis la dernière validation.
+- Historique 30 jours avec bouton « Charger les actualités précédentes ».
+- La limite de 10 ne concerne plus la collecte : elle concerne uniquement le feed courant par source.
 
-1. Décompresse ce projet et place-le dans un dépôt GitHub.
-2. Dans Netlify : **Add new project > Import an existing project**.
-3. Sélectionne le dépôt.
-4. Netlify détecte `netlify.toml`. Il n'y a pas de framework ni de commande de build à renseigner.
-5. Déploie en production.
-6. Après le premier déploiement, ouvre **Netlify > Functions > collect > Run now** une fois.
-7. Ouvre ton site : `/api/feed` doit maintenant contenir les données et la page d'accueil les affiche.
+## Logs utiles
 
-Ensuite, `collect` se relance automatiquement toutes les 10 minutes.
+`collect` écrit une ligne par source :
 
-### Option B — Netlify CLI
-
-```bash
-npm install
-npx netlify login
-npx netlify init
-npx netlify deploy --prod
+```text
+{"event":"rapli-source","name":"FFF","status":"ok","count":10,"candidates":32,"newCount":4}
 ```
 
-Puis lance une première collecte depuis l'interface Netlify (`Functions > collect > Run now`).
+Puis un résumé :
 
-## Développement local
-
-```bash
-npm install
-npm run dev
+```text
+{"event":"rapli-collect","ok":true,...}
 ```
 
-Attention : Netlify Dev ne lance pas le cron automatiquement. Pour tester la collecte :
+`enrich` écrit un résumé `rapli-enrich` et les erreurs individuelles éventuelles.
 
-```bash
-npx netlify functions:invoke collect
-```
+## Favicon
+Le favicon Rapli Actu est généré à partir du visuel fourni et inclus pour navigateur, iOS et manifeste web.
 
-## États d'une source
 
-- `ok` : récupération réussie au dernier cycle.
-- `stale` : la récupération actuelle a échoué, mais le dernier cache valide est conservé.
-- `error` : aucune récupération n'a encore réussi.
-- `disabled` : source volontairement non connectée (actuellement Instagram).
+## V2.0.2
+Le favicon singe est également affiché comme petit logo dans le header, sans augmenter sa hauteur.
 
-## Instagram
 
-La source Sakina Karchaoui est déclarée mais désactivée. Instagram ne fournit pas de RSS public fiable pour un compte tiers. On pourra ensuite connecter une API/service autorisé sans modifier l'architecture générale.
+## V2.0.3
+Sources supprimées : Touchdown Actu, Passion MLB, BasketUSA, BeBasket, Radio Metal, Cœurs de Foot, TrashTalk, FFBB et Sakina Karchaoui — Instagram. Les anciennes entrées de ces sources sont aussi filtrées de l’historique et du compteur de nouvelles actus.
 
-## Ajouter une source
 
-Tout se fait dans `netlify/lib/sources.mjs`.
+## V2.1 — Anti‑Putaclic V2
+- Analyse en 2 passes : titre/résumé puis corps de l’article lors de `enrich`.
+- Détecte personnes masquées (`ce joueur`, `cette star`), informations cachées (`ce qui`, `la raison`, `voici pourquoi`) et accroches sensationnalistes.
+- Cherche dans le texte une information concrète (`manque de maîtrise`, `problème de concentration`, etc.) avant toute réécriture précise.
+- Si aucune réponse suffisamment fiable n’est trouvée, neutralise le titre sans inventer de détail.
+- Le titre original reste accessible en petit avec le badge `🎣 nettoyé`.
+- Le corps intégral de l’article n’est jamais stocké : il ne sert que temporairement à l’analyse pendant l’enrichissement.
 
-### RSS
 
-```js
-{ id:'exemple', name:'Exemple', domain:'exemple.fr', category:'football', icon:'⚽', color:'#123456', rss:['https://exemple.fr/feed/'] }
-```
+## V2.1.1 — Nettoyage des sources
+- Le Marin est désormais classé dans **Transport**.
+- Sources supprimées : Foot Mercato, CardsAddict, Cyclism’Actu et SportCard.
+- Passion MLB et TrashTalk restent supprimées.
+- Le endpoint `/api/feed` filtre désormais aussi le cache courant avec la liste des sources actives : une source retirée ne peut plus rester visible après un déploiement en attendant le prochain `collect`.
+- La file `enrich` ignore également les anciennes entrées provenant de sources retirées.
 
-### Page HTML
 
-```js
-{
-  id:'exemple', name:'Exemple', domain:'exemple.fr', category:'football',
-  icon:'⚽', color:'#123456', adapter:'genericHtml',
-  page:'https://exemple.fr/actus',
-  linkPattern:/^https?:\/\/(?:www\.)?exemple\.fr\/actus\//i
-}
-```
 
-Si un site a une structure spéciale, on lui crée un parseur dédié dans `netlify/lib/parsers.mjs`, comme pour FFF et Footy Headlines.
-
-## Limite actuelle assumée
-
-Le collecteur reste volontairement à **10 actus/source**. C'est le meilleur compromis pour ton feed perso : léger, rapide et suffisamment fourni.
-
-Le moteur anti-putaclic travaille encore sur `titre + extrait`. Une future V1.1 pourra enrichir uniquement les titres vagues en allant lire le corps de l'article côté serveur, sans ralentir la collecte principale.
+## V2.1.2 — Chroniques Bleues + Footy Headlines
+- Correction de **Chroniques Bleues (#15)** : l’extracteur ne scanne plus tous les liens internes. Il ne conserve que les vrais titres d’articles de la page d’accueil (`h2`) accompagnés d’une date de publication explicite.
+- Les anciennes entrées Chroniques Bleues avec date artificiellement inférée sont filtrées du feed et de l’historique visible.
+- Après une collecte Chroniques Bleues réussie, le feed courant de cette source est remplacé par la nouvelle liste propre afin d’éliminer immédiatement les anciennes pages parasites en cache.
+- **Footy Headlines (#16) supprimé** de Rapli Actu. Les anciennes entrées Footy Headlines sont automatiquement masquées du feed, de l’historique et de la file d’enrichissement.
+- Total : **26 sources actives**.
