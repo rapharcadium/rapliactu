@@ -1,3 +1,7 @@
+# Rapli Actu — V2.1.4
+
+Correctif critique : restauration du feed `/api/feed`, logo header transparent et fortement réduit, cache navigateur rendu compatible avec les mises à jour quotidiennes, fallback local si l’API est momentanément indisponible.
+
 # Rapli Actu — V2.1.3
 
 ## Correctif caractères HTML

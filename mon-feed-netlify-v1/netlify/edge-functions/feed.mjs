@@ -1,5 +1,5 @@
 import { cleanText } from '../lib/http.mjs';
-import { isStoredArticleAllowed } from '../lib/sources.mjs';
+import { ACTIVE_SOURCE_IDS, isStoredArticleAllowed } from '../lib/sources.mjs';
 import { getStore } from '@netlify/blobs';
 const STORE='rapli-actu',CURRENT='feed/current',PREFIX='history/day/';
 function normalizeArticleText(x){if(!x)return x;return {...x,title:cleanText(x.title||''),originalTitle:cleanText(x.originalTitle||''),summary:cleanText(x.summary||'')}}
